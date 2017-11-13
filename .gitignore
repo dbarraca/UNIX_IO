@@ -1,0 +1,10 @@
+.cproject
+.project
+Default/
+Debug/
+bin/
+doc/
+*.class
+.classpath
+output*
+output.txt
