@@ -10,7 +10,7 @@
 
 #define NUM_CHILD 5
 #define CHILD_LIFETIME 30
-#define BUFFER_SIZE 32
+#define BUFFER_SIZE 80
 #define TIME_FORM 8
 #define CHILD_SLEEP 3
 
@@ -29,19 +29,19 @@ void timeString(char *timeStr, struct timeval timestamp, struct timeval start) {
 
    usecs = 1000000 * (timestamp.tv_sec - start.tv_sec) + timestamp.tv_usec -
     start.tv_usec; // calculate time since start
-
-   sprintf(timeStr, "0:%02ld:%03ld", usecs / 1000000,(usecs % 1000000) / 1000); // format time stamp string
+   sprintf(timeStr, "0:%02ld:%03ld", usecs / 1000000, (usecs % 1000000) / 1000); // format time stamp string
 }
+
 int main(int argc, char **argv) {
    int pid = 1;
    int child;
    int childNum;
-   int childSleep;
    int childPids[NUM_CHILD];
    ssize_t readResult = -1;
    char outBuf[BUFFER_SIZE];
    int outputFD;
    int messageLen;
+   int message;
 
    // pipe variables
    int fd[NUM_CHILD][2];
@@ -61,12 +61,11 @@ int main(int argc, char **argv) {
    timeout.tv_sec = 2;
    timeout.tv_usec = 0;
 
-   srand(0); // initialize random number generator
+
    gettimeofday(&start, NULL); // store time stamp for start
 
    for (child = 0; child < NUM_CHILD; child++) // count children
       if(pid != 0) { // check if child
-         childSleep = random() % CHILD_SLEEP; // set random sleep time for child
          childNum = child; // store child number
          pipe(fd[child]); // make pipe to be used between child and parent
          pid = fork(); // fork to make a child
@@ -93,6 +92,7 @@ int main(int argc, char **argv) {
          if(numReady > 0) // check if there was something to read
             for (child = 0; child < NUM_CHILD; child++) // count children
                if(FD_ISSET(fd[child][0], &readfds) > 0) { // check if a child's file descriptor has something to read
+                  memset(pipeReadBuf, 0, BUFFER_SIZE); // set buffer to zeros
                   readResult = read(fd[child][0], pipeReadBuf, BUFFER_SIZE); // read from pipe
 
                   if (readResult > 0) {// check if at end of pipe
@@ -100,6 +100,7 @@ int main(int argc, char **argv) {
                      timeString(timeFormat, timestamp, start); // get string format of time
                      messageLen = sprintf(outBuf, "%s %s", timeFormat, pipeReadBuf); // prepend time stamp
                      write(outputFD, outBuf, messageLen); // write output file
+//                     printf("%s\n",outBuf);
                   }
                }
 
@@ -113,24 +114,22 @@ int main(int argc, char **argv) {
 
       close(outputFD); // close output file
    }
-   else {  //child
+   else { //child
       close(fd[childNum][0]); // close reading end of pipe
 
-      if (childNum < NUM_CHILD - 1) {
-         gettimeofday(&timestamp, NULL); // get time stamp of current time
-         timeString(timeFormat, timestamp, start); // get string format of time
-         sprintf(pipeWriteBuf, "%s Child %d Message 1\n", timeFormat, childNum + 1); // format child first message
-         write(fd[childNum][1], pipeWriteBuf, strlen(pipeWriteBuf) + 1); // write to pipe connected to parent
+      srand(childNum); // initialize random number generator per child
 
-         sleep(childSleep); // child sleeps for random interval
+      if (childNum < NUM_CHILD - 1) { // first four children
+         for (message = 1; ; message++) { // count messages
+            gettimeofday(&timestamp, NULL); // get time stamp of current time
+            timeString(timeFormat, timestamp, start); // get string format of time
+            sprintf(pipeWriteBuf, "%s: Child %d message %d\n", timeFormat, childNum + 1, message); // format child first message
+            write(fd[childNum][1], pipeWriteBuf, strlen(pipeWriteBuf) + 1); // write to pipe connected to parent
 
-         gettimeofday(&timestamp, NULL); // get time stamp of current time
-         timeString(timeFormat, timestamp, start); // get string format of time
-         sprintf(pipeWriteBuf, "%s Child %d Message 2\n", timeFormat, childNum + 1); // format child second message
-         write(fd[childNum][1], pipeWriteBuf, strlen(pipeWriteBuf) + 1); // write to pipe connected to parent
-
+            sleep(random() % 3); // child sleeps for random interval
+         }
       }
-      else {
+      else { // last child
          while(readResult != 0) { // continue until end of file command
             printf("Enter a message: "); // print prompt
             fflush(stdout); // flush standard out
@@ -139,7 +138,7 @@ int main(int argc, char **argv) {
             if (readResult > 0) { // check if something to read
                gettimeofday(&timestamp, NULL); // get time stamp of current time
                timeString(timeFormat, timestamp, start); // get string format of time
-               sprintf(pipeWriteBuf, "%s %s", timeFormat, pipeReadBuf); // prepend time to read in message
+               sprintf(pipeWriteBuf, "%s: Child 5: %s", timeFormat, pipeReadBuf); // prepend time to read in message
                write(fd[childNum][1], pipeWriteBuf, strlen(pipeWriteBuf) + 1); // write to pipe connected to parent
                memset(pipeReadBuf, 0, BUFFER_SIZE); // set buffer to zeros
             }
